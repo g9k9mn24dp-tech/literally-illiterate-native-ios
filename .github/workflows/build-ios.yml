@@ -29,8 +29,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-                  - name: Upload simulator app
-            uses: actions/upload-artifact@v4
-            with:
-            name: LiterallyIlliterate-Simulator
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiterallyIlliterate-Simulator
             path: ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug-iphonesimulator/LiterallyIlliterate.app
