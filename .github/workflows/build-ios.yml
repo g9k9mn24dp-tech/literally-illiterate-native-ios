@@ -1,4 +1,4 @@
-name: Build iOS
+name: Build Signed iOS App
 
 on:
   workflow_dispatch:
@@ -18,12 +18,154 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
-      - name: Build iOS Simulator app
-        working-directory: ios
-        run: xcodebuild -project LiterallyIlliterate.xcodeproj -scheme LiterallyIlliterate -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Install Apple certificate and provisioning profile
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          PRIVATE_KEY_BASE64: ${{ secrets.IOS_PRIVATE_KEY_BASE64 }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/distribution.cer"
+          PRIVATE_KEY_PATH="$RUNNER_TEMP/distribution.key"
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="temporary-build-password"
+          P12_PATH="$RUNNER_TEMP/distribution.p12"
+          P12_PASSWORD="temporary-p12-password"
 
-      - name: Upload simulator app
+          echo "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo "$PRIVATE_KEY_BASE64" | base64 --decode > "$PRIVATE_KEY_PATH"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+
+          openssl x509 \
+            -inform DER \
+            -in "$CERTIFICATE_PATH" \
+            -out "$RUNNER_TEMP/distribution.pem"
+
+          openssl pkcs12 -export \
+            -inkey "$PRIVATE_KEY_PATH" \
+            -in "$RUNNER_TEMP/distribution.pem" \
+            -out "$P12_PATH" \
+            -passout pass:"$P12_PASSWORD"
+
+          security create-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security set-keychain-settings \
+            -lut 21600 \
+            "$KEYCHAIN_PATH"
+
+          security unlock-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security import "$P12_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security list-keychains \
+            -d user \
+            -s "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy \
+            -c 'Print UUID' \
+            /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+
+          cp "$PROFILE_PATH" \
+            "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+
+      - name: Verify signing identity
+        run: |
+          security find-identity -v -p codesigning
+
+      - name: Archive signed iOS app
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project LiterallyIlliterate.xcodeproj \
+            -scheme LiterallyIlliterate \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE="$PROFILE_UUID" \
+            MARKETING_VERSION="2.131675.10" \
+            CURRENT_PROJECT_VERSION="11" \
+            archive \
+            -archivePath "$RUNNER_TEMP/LiterallyIlliterate.xcarchive"
+
+      - name: Create export options
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.base6a77790db3a887ec8a3521dd.app</key>
+                  <string>${PROFILE_UUID}</string>
+              </dict>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>uploadSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export signed IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/export"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/LiterallyIlliterate.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload signed IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LiterallyIlliterate-Simulator
-          path: ~/Library/Developer/Xcode/DerivedData/
+          name: LiterallyIlliterate-signed-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+
+      - name: Upload to App Store Connect
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$API_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8
+
+          IPA_PATH=$(find "$RUNNER_TEMP/export" -name "*.ipa" -type f | head -1)
+
+          xcrun altool \
+            --upload-app \
+            --file "$IPA_PATH" \
+            --type ios \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER_ID"
