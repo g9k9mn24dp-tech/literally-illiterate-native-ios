@@ -1,0 +1,25 @@
+name: LiterallyIlliterate
+
+options:
+  bundleIdPrefix: com.base6a77790db3a887ec8a3521dd
+
+targets:
+  LiterallyIlliterate:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+
+    sources:
+      - path: .
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.base6a77790db3a887ec8a3521dd.app
+        PRODUCT_NAME: LiterallyIlliterate
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+
+    info:
+      path: Info.plist
