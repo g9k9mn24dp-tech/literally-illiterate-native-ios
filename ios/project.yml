@@ -24,9 +24,13 @@ targets:
         MARKETING_VERSION: "2.131676.0"
         CURRENT_PROJECT_VERSION: "13"
 
-        info:
+    info:
       path: Info.plist
       properties:
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleDisplayName: Literally Illiterate
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
