@@ -105,7 +105,7 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE="$PROFILE_UUID" \
             MARKETING_VERSION="3.0.2" \
-            CURRENT_PROJECT_VERSION="16" \
+            CURRENT_PROJECT_VERSION="17" \
             archive \
             -archivePath "$RUNNER_TEMP/LiterallyIlliterate.xcarchive"
 
