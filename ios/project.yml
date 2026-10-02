@@ -18,12 +18,18 @@ targets:
         PRODUCT_NAME: LiterallyIlliterate
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: LiterallyIlliterate.entitlements        
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "3.0.2"
-        CURRENT_PROJECT_VERSION: "19"
+        CURRENT_PROJECT_VERSION: "20"
 
+    entitlements:
+      path: LiterallyIlliterate.entitlements
+      properties:
+        com.apple.developer.applesignin:
+           - Default
     info:
       path: Info.plist
       properties:
